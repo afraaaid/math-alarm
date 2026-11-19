@@ -17,10 +17,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Installa dipendenze di sistema
+      - name: Verifica utility di sistema preinstallate
         run: |
-          sudo apt-get update
-          sudo apt-get install -y curl unzip xz-utils zip python3 libxml2 zlib1g
+          for cmd in curl unzip tar xz zip python3 file; do
+            command -v "$cmd" >/dev/null 2>&1 || { echo "Manca comando: $cmd"; exit 1; }
+          done
+          python3 --version
 
       - name: Scarica Toolchain iOS Linux (Clang + ld64 + ldid) e iOS SDK
         run: |
@@ -44,7 +46,7 @@ jobs:
           python3 scripts/generate_sounds.py
           python3 scripts/generate_icon.py
 
-      - name: Compila binario arm64-apple-ios (Release)
+      - name: Prepara compat_libs e compila binario arm64-apple-ios (Release)
         run: |
           CLANG_BIN=$(find toolchain -type f -name "clang" | head -n 1)
           if [ -z "$CLANG_BIN" ]; then
@@ -58,11 +60,29 @@ jobs:
             exit 1
           fi
 
+          COMPAT_DIR="$PWD/compat_libs"
+          mkdir -p "$COMPAT_DIR"
+          for bin in "$TOOLCHAIN_BIN_DIR"/*; do
+            [ -x "$bin" ] && [ ! -d "$bin" ] || continue
+            while IFS= read -r missing_so; do
+              [ -n "$missing_so" ] || continue
+              base_name="${missing_so%%.so*}"
+              candidate=$(find /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu -maxdepth 1 -name "${base_name}.so*" 2>/dev/null | head -n 1 || true)
+              if [ -n "$candidate" ] && [ ! -e "$COMPAT_DIR/$missing_so" ]; then
+                echo "Creo symlink compatibilità: $missing_so -> $candidate"
+                ln -sf "$candidate" "$COMPAT_DIR/$missing_so"
+              fi
+            done < <(ldd "$bin" 2>/dev/null | awk '/not found/ {print $1}' || true)
+          done
+
+          export LD_LIBRARY_PATH="$COMPAT_DIR:${LD_LIBRARY_PATH:-}"
+          echo "COMPAT_LD_PATH=$COMPAT_DIR" >> "$GITHUB_ENV"
+
           echo "Uso compiler: $CLANG_BIN"
           echo "Uso toolchain dir: $TOOLCHAIN_BIN_DIR"
           echo "Uso SDK: $SDK_PATH"
           export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
-          ls -la "$TOOLCHAIN_BIN_DIR"
+          "$CLANG_BIN" --version
 
           mkdir -p ipa_work/Payload/Sveglia.app
 
@@ -89,6 +109,7 @@ jobs:
 
       - name: Impacchetta risorse, firma ad-hoc con ldid e crea Sveglia.ipa
         run: |
+          export LD_LIBRARY_PATH="${COMPAT_LD_PATH:-}:${LD_LIBRARY_PATH:-}"
           cp Sveglia/Info.plist ipa_work/Payload/Sveglia.app/Info.plist
           cp Sveglia/Resources/Sounds/*.wav ipa_work/Payload/Sveglia.app/
           cp Sveglia/Resources/Icons/*.png ipa_work/Payload/Sveglia.app/
