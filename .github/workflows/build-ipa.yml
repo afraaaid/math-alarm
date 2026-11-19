@@ -10,85 +10,104 @@ on:
 
 jobs:
   build-ipa:
-    name: Compila IPA iOS (Release)
-    runs-on: macos-latest
+    name: Compila IPA iOS su Ubuntu
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Seleziona versione Xcode più recente
+      - name: Installa dipendenze di sistema
         run: |
-          BEST_XCODE=""
-          BEST_VER="0"
-          for app in /Applications/Xcode*.app; do
-            [ -d "$app" ] || continue
-            VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist" 2>/dev/null || echo "0")
-            if [ "$(printf '%s\n%s\n' "$BEST_VER" "$VER" | sort -V | tail -n 1)" = "$VER" ]; then
-              BEST_VER="$VER"
-              BEST_XCODE="$app"
-            fi
-          done
-          if [ -n "$BEST_XCODE" ]; then
-            echo "Seleziono Xcode $BEST_VER ($BEST_XCODE)"
-            sudo xcode-select -s "$BEST_XCODE/Contents/Developer"
-          fi
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+          sudo apt-get update
+          sudo apt-get install -y curl unzip xz-utils zip python3 libxml2 zlib1g
 
-      - name: Installa XcodeGen se mancante
+      - name: Scarica Toolchain iOS Linux (Clang + ld64 + ldid) e iOS SDK
         run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          fi
-          xcodegen --version
+          mkdir -p toolchain sdks
+          curl -fSL "https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz" -o toolchain.tar.xz
+          tar -xJf toolchain.tar.xz -C toolchain
+          rm -f toolchain.tar.xz
 
-      - name: Genera suonerie WAV e icona app
+          curl -fSL "https://github.com/theos/sdks/archive/refs/heads/master.zip" -o sdks.zip
+          unzip -q sdks.zip -d sdks_tmp
+          mv sdks_tmp/sdks-master/*.sdk sdks/
+          rm -rf sdks.zip sdks_tmp
+
+          echo "Contenuto toolchain:"
+          find toolchain -maxdepth 4 -type f \( -name "clang" -o -name "ldid" -o -name "ld*" \)
+          echo "SDK disponibili:"
+          ls -d sdks/iPhoneOS*.sdk
+
+      - name: Genera suonerie WAV e icone PNG
         run: |
           python3 scripts/generate_sounds.py
           python3 scripts/generate_icon.py
 
-      - name: Genera progetto Xcode con XcodeGen
+      - name: Compila binario arm64-apple-ios (Release)
         run: |
-          xcodegen generate
-
-      - name: Configura xcconfig per SDK (AlarmKit weak linking se presente)
-        run: |
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          if [ -d "$SDK_PATH/System/Library/Frameworks/AlarmKit.framework" ] || [ -e "$SDK_PATH/System/Library/Frameworks/AlarmKit.framework/AlarmKit.tbd" ]; then
-            echo "AlarmKit rilevato nell'SDK iOS: abilito weak_framework AlarmKit"
-            echo 'OTHER_LDFLAGS = $(inherited) -weak_framework AlarmKit' > ci.xcconfig
-          else
-            echo "AlarmKit non presente in questo SDK: compilazione con Catena Hydra"
-            : > ci.xcconfig
-          fi
-
-      - name: Compila Sveglia.app (Release, iphoneos, unsigned)
-        run: |
-          xcodebuild \
-            -project Sveglia.xcodeproj \
-            -scheme Sveglia \
-            -configuration Release \
-            -sdk iphoneos \
-            -xcconfig ci.xcconfig \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            build
-
-      - name: Impacchetta Sveglia.ipa con firma ad-hoc
-        run: |
-          APP_PATH="build/Build/Products/Release-iphoneos/Sveglia.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Errore: Sveglia.app non trovato in $APP_PATH"
+          CLANG_BIN=$(find toolchain -type f -name "clang" | head -n 1)
+          if [ -z "$CLANG_BIN" ]; then
+            echo "Errore: clang non trovato nella toolchain"
             exit 1
           fi
-          mkdir -p ipa_work/Payload
-          cp -R "$APP_PATH" ipa_work/Payload/Sveglia.app
-          rm -rf ipa_work/Payload/Sveglia.app/_CodeSignature
-          codesign --force --deep --sign - ipa_work/Payload/Sveglia.app
+          TOOLCHAIN_BIN_DIR=$(dirname "$CLANG_BIN")
+          SDK_PATH=$(ls -d sdks/iPhoneOS*.sdk | sort -V | tail -n 1)
+          if [ -z "$SDK_PATH" ]; then
+            echo "Errore: nessun iPhoneOS SDK trovato"
+            exit 1
+          fi
+
+          echo "Uso compiler: $CLANG_BIN"
+          echo "Uso toolchain dir: $TOOLCHAIN_BIN_DIR"
+          echo "Uso SDK: $SDK_PATH"
+          export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+          ls -la "$TOOLCHAIN_BIN_DIR"
+
+          mkdir -p ipa_work/Payload/Sveglia.app
+
+          "$CLANG_BIN" \
+            -target arm64-apple-ios15.0 \
+            -isysroot "$SDK_PATH" \
+            -B"$TOOLCHAIN_BIN_DIR" \
+            -fobjc-arc \
+            -O2 \
+            -Wall \
+            -framework Foundation \
+            -framework UIKit \
+            -framework AVFoundation \
+            -framework MediaPlayer \
+            -framework UserNotifications \
+            -framework QuartzCore \
+            ios_objc/Models.m \
+            ios_objc/AlarmEngine.m \
+            ios_objc/Views.m \
+            ios_objc/main.m \
+            -o ipa_work/Payload/Sveglia.app/Sveglia
+
+          file ipa_work/Payload/Sveglia.app/Sveglia
+
+      - name: Impacchetta risorse, firma ad-hoc con ldid e crea Sveglia.ipa
+        run: |
+          cp Sveglia/Info.plist ipa_work/Payload/Sveglia.app/Info.plist
+          cp Sveglia/Resources/Sounds/*.wav ipa_work/Payload/Sveglia.app/
+          cp Sveglia/Resources/Icons/*.png ipa_work/Payload/Sveglia.app/
+
+          python3 -c '
+          import plistlib
+          with open("ipa_work/Payload/Sveglia.app/Info.plist", "rb") as f:
+              plistlib.load(f)
+          print("Info.plist valido")
+          '
+
+          LDID_BIN=$(find toolchain -type f -name "ldid" | head -n 1 || true)
+          if [ -n "$LDID_BIN" ]; then
+            echo "Applico firma ad-hoc con $LDID_BIN"
+            "$LDID_BIN" -S ipa_work/Payload/Sveglia.app/Sveglia
+          else
+            echo "Avviso: ldid non trovato, continuo con binario non firmato (SideStore/AltStore/Sideloadly firmeranno durante il sideload)"
+          fi
+
           cd ipa_work
           zip -qry ../Sveglia.ipa Payload
           cd ..

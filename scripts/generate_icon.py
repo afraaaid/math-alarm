@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Genera l'icona 1024x1024 PNG dell'app Sveglia (sfondo OLED scuro,
+Genera le icone PNG dell'app Sveglia (sfondo OLED scuro,
 anello sveglia con gradiente arancio-corallo e simbolo matematico +/=).
+Genera sia AppIcon-1024.png (Asset Catalog) sia AppIcon60x60@2x/3x.png (bundle diretto).
 Usa solo libreria standard Python (math, os, struct, zlib).
 """
 
@@ -48,7 +49,7 @@ def write_png(path: str, width: int, height: int, rows: list[bytes]) -> None:
         f.write(png_data)
 
 
-def render_icon(size: int = 1024) -> list[bytes]:
+def render_icon(size: int) -> list[bytes]:
     rows: list[bytes] = []
     half = size / 2.0
     inv = 1.0 / half
@@ -66,29 +67,27 @@ def render_icon(size: int = 1024) -> list[bytes]:
             bg_g = 9.0 + 12.0 * glow
             bg_b = 14.0 + 8.0 * glow
 
-            # Anello esterno dell'orologio (raggio 0.58, spessore 0.065)
+            # Anello esterno dell'orologio
             ring_sdf = abs(r_dist - 0.58) - 0.055
             ring_alpha = 1.0 - smoothstep(-0.008, 0.008, ring_sdf)
 
-            # Campane superiori della sveglia (due archi a +-42 deg)
+            # Campane superiori della sveglia
             bell_alpha = 0.0
             for sign in (-1.0, 1.0):
                 bx = nx - sign * 0.48
                 by = ny + 0.48
-                angle = math.atan2(by, bx)
                 bd = math.hypot(bx, by)
-                # Piccola orecchia a mezzaluna
                 ear_sdf = abs(bd - 0.16) - 0.045
                 if sign * nx > 0.15 and ny < -0.25:
                     bell_alpha = max(bell_alpha, 1.0 - smoothstep(-0.008, 0.008, ear_sdf))
 
-            # Simbolo + al centro (stile arrotondato moderno)
+            # Simbolo + al centro
             bar_h = sd_rounded_box(nx, ny + 0.06, 0.24, 0.055, 0.025)
             bar_v = sd_rounded_box(nx, ny + 0.06, 0.055, 0.24, 0.025)
             plus_sdf = min(bar_h, bar_v)
             plus_alpha = 1.0 - smoothstep(-0.008, 0.008, plus_sdf)
 
-            # Simbolo = sotto il + (due sbarrette orizzontali o accento inferiore)
+            # Sbarretta inferiore
             eq_top = sd_rounded_box(nx, ny - 0.25, 0.16, 0.032, 0.015)
             eq_alpha = 1.0 - smoothstep(-0.008, 0.008, eq_top)
 
@@ -126,7 +125,8 @@ def render_icon(size: int = 1024) -> list[bytes]:
 
 def main() -> None:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out_path = os.path.join(
+
+    asset_1024 = os.path.join(
         repo_root,
         "Sveglia",
         "Resources",
@@ -134,10 +134,23 @@ def main() -> None:
         "AppIcon.appiconset",
         "AppIcon-1024.png",
     )
-    print(f"Generazione icona 1024x1024 in {out_path}...")
-    rows = render_icon(1024)
-    write_png(out_path, 1024, 1024, rows)
-    print("Icona generata con successo.")
+    icons_dir = os.path.join(repo_root, "Sveglia", "Resources", "Icons")
+
+    targets = [
+        (1024, asset_1024),
+        (1024, os.path.join(icons_dir, "AppIcon-1024.png")),
+        (180, os.path.join(icons_dir, "AppIcon60x60@3x.png")),
+        (120, os.path.join(icons_dir, "AppIcon60x60@2x.png")),
+    ]
+
+    cache: dict[int, list[bytes]] = {}
+    for size, path in targets:
+        print(f"Generazione icona {size}x{size} in {path}...")
+        if size not in cache:
+            cache[size] = render_icon(size)
+        write_png(path, size, size, cache[size])
+
+    print("Tutte le icone generate con successo.")
 
 
 if __name__ == "__main__":
