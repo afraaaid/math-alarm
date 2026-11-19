@@ -1,0 +1,102 @@
+name: Build Sveglia IPA
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Compila IPA iOS (Release)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Seleziona versione Xcode più recente
+        run: |
+          BEST_XCODE=""
+          BEST_VER="0"
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist" 2>/dev/null || echo "0")
+            if [ "$(printf '%s\n%s\n' "$BEST_VER" "$VER" | sort -V | tail -n 1)" = "$VER" ]; then
+              BEST_VER="$VER"
+              BEST_XCODE="$app"
+            fi
+          done
+          if [ -n "$BEST_XCODE" ]; then
+            echo "Seleziono Xcode $BEST_VER ($BEST_XCODE)"
+            sudo xcode-select -s "$BEST_XCODE/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Installa XcodeGen se mancante
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Genera suonerie WAV e icona app
+        run: |
+          python3 scripts/generate_sounds.py
+          python3 scripts/generate_icon.py
+
+      - name: Genera progetto Xcode con XcodeGen
+        run: |
+          xcodegen generate
+
+      - name: Configura xcconfig per SDK (AlarmKit weak linking se presente)
+        run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          if [ -d "$SDK_PATH/System/Library/Frameworks/AlarmKit.framework" ] || [ -e "$SDK_PATH/System/Library/Frameworks/AlarmKit.framework/AlarmKit.tbd" ]; then
+            echo "AlarmKit rilevato nell'SDK iOS: abilito weak_framework AlarmKit"
+            echo 'OTHER_LDFLAGS = $(inherited) -weak_framework AlarmKit' > ci.xcconfig
+          else
+            echo "AlarmKit non presente in questo SDK: compilazione con Catena Hydra"
+            : > ci.xcconfig
+          fi
+
+      - name: Compila Sveglia.app (Release, iphoneos, unsigned)
+        run: |
+          xcodebuild \
+            -project Sveglia.xcodeproj \
+            -scheme Sveglia \
+            -configuration Release \
+            -sdk iphoneos \
+            -xcconfig ci.xcconfig \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Impacchetta Sveglia.ipa con firma ad-hoc
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/Sveglia.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Errore: Sveglia.app non trovato in $APP_PATH"
+            exit 1
+          fi
+          mkdir -p ipa_work/Payload
+          cp -R "$APP_PATH" ipa_work/Payload/Sveglia.app
+          rm -rf ipa_work/Payload/Sveglia.app/_CodeSignature
+          codesign --force --deep --sign - ipa_work/Payload/Sveglia.app
+          cd ipa_work
+          zip -qry ../Sveglia.ipa Payload
+          cd ..
+          ls -lh Sveglia.ipa
+
+      - name: Carica artifact Sveglia.ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sveglia-iOS-IPA
+          path: Sveglia.ipa
+          retention-days: 30

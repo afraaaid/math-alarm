@@ -1,0 +1,43 @@
+name: Sveglia
+options:
+  bundleIdPrefix: com.sveglia
+  deploymentTarget:
+    iOS: "18.0"
+  groupSortPosition: top
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+
+targets:
+  Sveglia:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sveglia
+        excludes:
+          - "Info.plist"
+          - "**/.DS_Store"
+    info:
+      path: Sveglia/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sveglia.mathalarm
+        PRODUCT_NAME: Sveglia
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # Nota: su Xcode 26/27+ (iOS 26/27 SDK) AlarmKit viene attivato automaticamente
+        # tramite #if canImport(AlarmKit) e collegato come weak_framework in CI.

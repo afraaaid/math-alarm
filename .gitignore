@@ -1,0 +1,18 @@
+# Xcode & Build artifacts
+*.xcodeproj/
+*.xcworkspace/
+build/
+DerivedData/
+ipa_work/
+Sveglia.ipa
+ci.xcconfig
+
+# macOS / IDE / OS
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+__pycache__/
+*.pyc
