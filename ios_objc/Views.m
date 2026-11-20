@@ -1426,8 +1426,8 @@ trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
     [rootStack addArrangedSubview:self.equationCard];
 
     UIView *spacerBottom = [[UIView alloc] init];
-    [spacerBottom.heightAnchor constraintEqualToAnchor:spacerTop.heightAnchor].active = YES;
     [rootStack addArrangedSubview:spacerBottom];
+    [spacerBottom.heightAnchor constraintEqualToAnchor:spacerTop.heightAnchor].active = YES;
 
     // Numeric Keypad (4 x 3)
     UIStackView *keypadStack = [[UIStackView alloc] init];
@@ -1994,12 +1994,12 @@ trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
             [self dismissViewControllerAnimated:NO completion:nil];
         }
         SVMathLockViewController *lock = [[SVMathLockViewController alloc] init];
+        self.lockVC = lock;
         [self addChildViewController:lock];
         lock.view.frame = self.view.bounds;
         lock.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [self.view addSubview:lock.view];
         [lock didMoveToParentViewController:self];
-        self.lockVC = lock;
         [self setNeedsUpdateOfHomeIndicatorAutoHidden];
     } else if (!ringing && self.lockVC) {
         [self.lockVC willMoveToParentViewController:nil];

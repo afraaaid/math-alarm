@@ -301,11 +301,15 @@ static void *SVVolumeObservationContext = &SVVolumeObservationContext;
     [self forceMaxSystemVolume];
 
     if (!self.isObserving) {
-        [[AVAudioSession sharedInstance] addObserver:self
-                                          forKeyPath:@"outputVolume"
-                                             options:NSKeyValueObservingOptionNew
-                                             context:SVVolumeObservationContext];
-        self.isObserving = YES;
+        @try {
+            [[AVAudioSession sharedInstance] addObserver:self
+                                              forKeyPath:@"outputVolume"
+                                                 options:NSKeyValueObservingOptionNew
+                                                 context:SVVolumeObservationContext];
+            self.isObserving = YES;
+        } @catch (NSException *exception) {
+            self.isObserving = NO;
+        }
     }
 
     [self.reinforceTimer invalidate];
@@ -326,9 +330,12 @@ static void *SVVolumeObservationContext = &SVVolumeObservationContext;
     self.reinforceTimer = nil;
 
     if (self.isObserving) {
-        [[AVAudioSession sharedInstance] removeObserver:self
-                                             forKeyPath:@"outputVolume"
-                                                context:SVVolumeObservationContext];
+        @try {
+            [[AVAudioSession sharedInstance] removeObserver:self
+                                                 forKeyPath:@"outputVolume"
+                                                    context:SVVolumeObservationContext];
+        } @catch (NSException *exception) {
+        }
         self.isObserving = NO;
     }
     [self.volumeView removeFromSuperview];
@@ -456,9 +463,12 @@ static NSString *const SVWakeUpDeadlineKey = @"sveglia.wakeUpDeadline.v1";
 
         [self loadState];
         [self registerNotificationCategories];
-        [self refreshPermissionStatus];
-        [self restoreActiveRingingIfNeeded];
-        [self startForegroundMonitor];
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf refreshPermissionStatus];
+            [weakSelf restoreActiveRingingIfNeeded];
+            [weakSelf startForegroundMonitor];
+        });
     }
     return self;
 }
