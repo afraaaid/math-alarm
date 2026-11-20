@@ -8,18 +8,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-ipa:
     name: Compila IPA iOS su Ubuntu
     runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verifica utility di sistema preinstallate
         run: |
-          for cmd in curl unzip tar xz zip python3 file; do
+          for cmd in curl unzip tar xz zip python3 file gh; do
             command -v "$cmd" >/dev/null 2>&1 || { echo "Manca comando: $cmd"; exit 1; }
           done
           python3 --version
@@ -132,12 +138,9 @@ jobs:
           cp Sveglia/Resources/Sounds/*.wav ipa_work/Payload/Sveglia.app/
           cp Sveglia/Resources/Icons/*.png ipa_work/Payload/Sveglia.app/
 
-          python3 -c '
-          import plistlib
-          with open("ipa_work/Payload/Sveglia.app/Info.plist", "rb") as f:
-              plistlib.load(f)
-          print("Info.plist valido")
-          '
+          VERSION_STR="1.0.${GITHUB_RUN_NUMBER}"
+          BUILD_NUM="${GITHUB_RUN_NUMBER}"
+          python3 scripts/update_repo_json.py --patch-plist ipa_work/Payload/Sveglia.app/Info.plist "$VERSION_STR" "$BUILD_NUM"
 
           LDID_BIN=$(find -L toolchain -type f -name "ldid" | head -n 1 || true)
           if [ -n "$LDID_BIN" ]; then
@@ -158,3 +161,38 @@ jobs:
           name: Sveglia-iOS-IPA
           path: Sveglia.ipa
           retention-days: 30
+
+      - name: Pubblica GitHub Release e aggiorna repo.json per FlareStore
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_STR="1.0.${GITHUB_RUN_NUMBER}"
+          BUILD_NUM="${GITHUB_RUN_NUMBER}"
+          TAG_NAME="v${VERSION_STR}"
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+
+          python3 scripts/update_repo_json.py \
+            --update-repo \
+            repo.json \
+            Sveglia.ipa \
+            "${GITHUB_REPOSITORY}" \
+            "$VERSION_STR" \
+            "$BUILD_NUM" \
+            "$TAG_NAME" \
+            "$COMMIT_MSG"
+
+          gh release create "$TAG_NAME" Sveglia.ipa repo.json \
+            --title "Sveglia ${VERSION_STR}" \
+            --notes "Build automatica #${BUILD_NUM}: ${COMMIT_MSG}" \
+            --latest || \
+          gh release upload "$TAG_NAME" Sveglia.ipa repo.json --clobber
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add repo.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Aggiorna repo.json a ${VERSION_STR} [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}" || true
+          fi

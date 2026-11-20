@@ -1,0 +1,48 @@
+{
+  "name": "Sveglia Math Alarm",
+  "identifier": "com.sveglia.mathalarm.repo",
+  "subtitle": "Sveglia matematica anti-chiusura per iOS (0% consumo notturno)",
+  "description": "Repository ufficiale per installare e aggiornare automaticamente Sveglia Math Alarm Pro su iOS tramite FlareStore, SideStore, AltStore o Feather.",
+  "iconURL": "https://raw.githubusercontent.com/afraaaid/math-alarm/main/Sveglia/Resources/Icons/AppIcon-1024.png",
+  "website": "https://github.com/afraaaid/math-alarm",
+  "tintColor": "#FF732E",
+  "featuredApps": [
+    "com.sveglia.mathalarm"
+  ],
+  "apps": [
+    {
+      "name": "Sveglia",
+      "bundleIdentifier": "com.sveglia.mathalarm",
+      "developerName": "afraaaid",
+      "subtitle": "Sveglia matematica impossibile da chiudere",
+      "localizedDescription": "Sveglia nativa iOS OLED Dark con 0% consumo batteria notturno (Catena Hydra Time-Sensitive), blocco volume fisico al 100%, sirena in background e spegnimento consentito solo risolvendo i calcoli matematici.",
+      "iconURL": "https://raw.githubusercontent.com/afraaaid/math-alarm/main/Sveglia/Resources/Icons/AppIcon-1024.png",
+      "tintColor": "#FF732E",
+      "category": "utilities",
+      "version": "1.0.0",
+      "buildVersion": "1",
+      "versionDate": "2026-11-20T20:15:00Z",
+      "versionDescription": "Versione iniziale",
+      "downloadURL": "https://github.com/afraaaid/math-alarm/releases/latest/download/Sveglia.ipa",
+      "size": 9900000,
+      "versions": [
+        {
+          "version": "1.0.0",
+          "buildVersion": "1",
+          "date": "2026-11-20T20:15:00Z",
+          "localizedDescription": "Versione iniziale",
+          "downloadURL": "https://github.com/afraaaid/math-alarm/releases/latest/download/Sveglia.ipa",
+          "size": 9900000,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSAlarmKitUsageDescription": "Sveglia utilizza AlarmKit e notifiche Time-Sensitive per suonare anche in Silenzioso con 0% consumo batteria notturno."
+        }
+      }
+    }
+  ],
+  "news": []
+}
