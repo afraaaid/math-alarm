@@ -109,6 +109,8 @@ jobs:
             -fobjc-arc \
             -O2 \
             -Wall \
+            -framework CoreFoundation \
+            -framework CoreGraphics \
             -framework Foundation \
             -framework UIKit \
             -framework AVFoundation \
