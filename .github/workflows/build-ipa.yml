@@ -36,8 +36,8 @@ jobs:
           mv sdks_tmp/sdks-master/*.sdk sdks/
           rm -rf sdks.zip sdks_tmp
 
-          echo "Contenuto toolchain:"
-          find toolchain -maxdepth 4 -type f \( -name "clang" -o -name "ldid" -o -name "ld*" \)
+          echo "Contenuto toolchain (bin):"
+          find toolchain -maxdepth 5 -path "*/bin/*" | head -n 60
           echo "SDK disponibili:"
           ls -d sdks/iPhoneOS*.sdk
 
@@ -48,26 +48,43 @@ jobs:
 
       - name: Prepara compat_libs e compila binario arm64-apple-ios (Release)
         run: |
-          CLANG_BIN=$(find toolchain -type f -name "clang" | head -n 1)
+          CLANG_BIN=$(find -L toolchain -type f -name "clang" | head -n 1 || true)
+          if [ -z "$CLANG_BIN" ]; then
+            CLANG_BIN=$(find -L toolchain -type f \( -name "clang-[0-9]*" -o -name "*apple-darwin*-clang" \) | head -n 1 || true)
+          fi
           if [ -z "$CLANG_BIN" ]; then
             echo "Errore: clang non trovato nella toolchain"
+            find toolchain -maxdepth 5
             exit 1
           fi
+
           TOOLCHAIN_BIN_DIR=$(dirname "$CLANG_BIN")
+          TOOLCHAIN_ROOT=$(dirname "$TOOLCHAIN_BIN_DIR")
           SDK_PATH=$(ls -d sdks/iPhoneOS*.sdk | sort -V | tail -n 1)
           if [ -z "$SDK_PATH" ]; then
             echo "Errore: nessun iPhoneOS SDK trovato"
             exit 1
           fi
 
+          if [ ! -e "$TOOLCHAIN_BIN_DIR/ld" ]; then
+            MACH_LD=$(find -L "$TOOLCHAIN_BIN_DIR" -maxdepth 1 -type f \( -name "*apple-darwin*-ld" -o -name "ld64" -o -name "ld64.lld" \) | head -n 1 || true)
+            if [ -n "$MACH_LD" ]; then
+              echo "Collego linker Mach-O: ld -> $(basename "$MACH_LD")"
+              ln -sf "$(basename "$MACH_LD")" "$TOOLCHAIN_BIN_DIR/ld"
+            fi
+          fi
+
           COMPAT_DIR="$PWD/compat_libs"
           mkdir -p "$COMPAT_DIR"
+          TOOLCHAIN_LIB_DIR="$TOOLCHAIN_ROOT/lib"
+
+          export LD_LIBRARY_PATH="$TOOLCHAIN_LIB_DIR:$COMPAT_DIR:${LD_LIBRARY_PATH:-}"
           for bin in "$TOOLCHAIN_BIN_DIR"/*; do
             [ -x "$bin" ] && [ ! -d "$bin" ] || continue
             while IFS= read -r missing_so; do
               [ -n "$missing_so" ] || continue
               base_name="${missing_so%%.so*}"
-              candidate=$(find /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu -maxdepth 1 -name "${base_name}.so*" 2>/dev/null | head -n 1 || true)
+              candidate=$(find /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu "$TOOLCHAIN_LIB_DIR" -maxdepth 2 -name "${base_name}.so*" 2>/dev/null | head -n 1 || true)
               if [ -n "$candidate" ] && [ ! -e "$COMPAT_DIR/$missing_so" ]; then
                 echo "Creo symlink compatibilità: $missing_so -> $candidate"
                 ln -sf "$candidate" "$COMPAT_DIR/$missing_so"
@@ -75,8 +92,7 @@ jobs:
             done < <(ldd "$bin" 2>/dev/null | awk '/not found/ {print $1}' || true)
           done
 
-          export LD_LIBRARY_PATH="$COMPAT_DIR:${LD_LIBRARY_PATH:-}"
-          echo "COMPAT_LD_PATH=$COMPAT_DIR" >> "$GITHUB_ENV"
+          echo "COMPAT_LD_PATH=$TOOLCHAIN_LIB_DIR:$COMPAT_DIR" >> "$GITHUB_ENV"
 
           echo "Uso compiler: $CLANG_BIN"
           echo "Uso toolchain dir: $TOOLCHAIN_BIN_DIR"
@@ -121,7 +137,7 @@ jobs:
           print("Info.plist valido")
           '
 
-          LDID_BIN=$(find toolchain -type f -name "ldid" | head -n 1 || true)
+          LDID_BIN=$(find -L toolchain -type f -name "ldid" | head -n 1 || true)
           if [ -n "$LDID_BIN" ]; then
             echo "Applico firma ad-hoc con $LDID_BIN"
             "$LDID_BIN" -S ipa_work/Payload/Sveglia.app/Sveglia
